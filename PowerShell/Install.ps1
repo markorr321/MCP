@@ -32,8 +32,58 @@ Write-Host "Bundle path: $bundlePath (Exists: $(Test-Path $bundlePath))"
 Write-Host "License path: $licensePath (Exists: $(Test-Path $licensePath))"
 Write-Host "Dependencies found: $($depPaths.Count)"
 
-Write-Host "Installing Company Portal with dependencies..."
+# Remove existing provisioned package if present (prevents version conflict)
+$existing = Get-AppxProvisionedPackage -Online |
+    Where-Object { $_.DisplayName -eq "Microsoft.CompanyPortal" }
+if ($existing) {
+    Write-Host "Removing existing provisioned package: $($existing.PackageName)"
+    Remove-AppxProvisionedPackage -Online -PackageName $existing.PackageName | Out-Null
+}
+
+Write-Host "Provisioning Company Portal with dependencies..."
 Add-AppxProvisionedPackage -Online -PackagePath $bundlePath -LicensePath $licensePath -DependencyPackagePath $depPaths | Out-Null
+
+# Register for any existing user profiles (covers scenarios where a user is already logged in)
+$pkg = Get-AppxPackage -AllUsers -Name "Microsoft.CompanyPortal" -ErrorAction SilentlyContinue
+if ($pkg) {
+    foreach ($p in @($pkg)) {
+        $manifest = Join-Path $p.InstallLocation "AppxManifest.xml"
+        if (Test-Path $manifest) {
+            Write-Host "Registering for existing users from: $($p.InstallLocation)"
+            Add-AppxPackage -Register $manifest -DisableDevelopmentMode -ForceApplicationShutdown -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+# Create a one-time logon task to register Company Portal at first user sign-in
+# This ensures the app is immediately available when ESP skips account setup
+$taskName = "RegisterCompanyPortal"
+$taskScript = @'
+$pkg = Get-AppxPackage -Name "Microsoft.CompanyPortal" -ErrorAction SilentlyContinue
+if (-not $pkg) {
+    $allPkg = Get-AppxPackage -AllUsers -Name "Microsoft.CompanyPortal" -ErrorAction SilentlyContinue
+    if ($allPkg) {
+        $manifest = Join-Path $allPkg[0].InstallLocation "AppxManifest.xml"
+        if (Test-Path $manifest) {
+            Add-AppxPackage -Register $manifest -DisableDevelopmentMode -ForceApplicationShutdown
+        }
+    }
+}
+Unregister-ScheduledTask -TaskName "RegisterCompanyPortal" -Confirm:$false
+'@
+
+$scriptPath = "C:\ProgramData\RegisterCompanyPortal.ps1"
+Set-Content -Path $scriptPath -Value $taskScript -Force
+
+$action  = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$scriptPath`""
+$trigger = New-ScheduledTaskTrigger -AtLogOn
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
+    -Principal (New-ScheduledTaskPrincipal -GroupId "BUILTIN\Users" -RunLevel Limited) `
+    -Force | Out-Null
+
+Write-Host "Logon registration task created: $taskName"
 
 # Verify installation
 $provisioned = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq "Microsoft.CompanyPortal" }

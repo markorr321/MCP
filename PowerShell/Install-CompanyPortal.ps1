@@ -15,7 +15,7 @@
 
 #region ── Configuration ──────────────────────────────────────────────────────────
 # Set to your GitHub repository in "owner/repo" format
-$GitHubRepo = "YOURORG/Company-Portal-Win32"
+$GitHubRepo = "markorr321/MCP"
 
 # Log file location (writable by SYSTEM)
 $LogPath = "C:\ProgramData\CompanyPortalInstall.log"
@@ -29,8 +29,22 @@ try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
     # ── Determine architecture ───────────────────────────────────────────────
-    $arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" }
+    $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
+        "ARM64" { "arm64" }
+        "AMD64" { "x64" }
+        default { "x86" }
+    }
     Write-Host "Detected architecture: $arch"
+
+    # ── Remove existing provisioned package if present ──────────────────────
+    $existing = Get-AppxProvisionedPackage -Online |
+        Where-Object { $_.DisplayName -eq "Microsoft.CompanyPortal" }
+
+    if ($existing) {
+        Write-Host "Removing existing provisioned package: $($existing.PackageName) (v$($existing.Version))"
+        Remove-AppxProvisionedPackage -Online -PackageName $existing.PackageName | Out-Null
+        Write-Host "Existing provisioned package removed."
+    }
 
     # ── Query GitHub for latest release ──────────────────────────────────────
     $apiUrl = "https://api.github.com/repos/$GitHubRepo/releases/latest"
