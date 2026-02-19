@@ -15,7 +15,9 @@ This solution instead uses the new [Intune Win32 PowerShell installer type](http
 The solution uses a two-phase approach:
 
 1. **System-level provisioning** - `Install.ps1` provisions the Company Portal `.appxbundle` with its dependencies and license so it is available to all users on the device.
-2. **Per-user registration** - A scheduled task (`RegisterCompanyPortal`) runs at every user logon to detect whether Company Portal is registered for that user. If not, it registers the app from the existing provisioned package.
+2. **Per-user registration** - A scheduled task (`RegisterCompanyPortal`) checks whether Company Portal is registered for the current user and registers it from the provisioned package if not. The task fires on two triggers:
+   - **Registration trigger** (30-second delay) — registers the app for the current user immediately after install, so it's available during the active session without waiting for a logoff/logon cycle.
+   - **Logon trigger** — catches any future users who log in after provisioning.
 
 ## Repository Structure
 
