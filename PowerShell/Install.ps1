@@ -1,6 +1,3 @@
-$ErrorActionPreference = "Stop"
-Start-Transcript -Path "C:\ProgramData\CompanyPortalInstall.log" -Force
-
 # Determine architecture for dependency selection
 $arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" }
 
@@ -32,67 +29,124 @@ Write-Host "Bundle path: $bundlePath (Exists: $(Test-Path $bundlePath))"
 Write-Host "License path: $licensePath (Exists: $(Test-Path $licensePath))"
 Write-Host "Dependencies found: $($depPaths.Count)"
 
-# Remove existing provisioned package if present (prevents version conflict)
-$existing = Get-AppxProvisionedPackage -Online |
-    Where-Object { $_.DisplayName -eq "Microsoft.CompanyPortal" }
-if ($existing) {
-    Write-Host "Removing existing provisioned package: $($existing.PackageName)"
-    Remove-AppxProvisionedPackage -Online -PackageName $existing.PackageName | Out-Null
-}
+try {
+    # Remove existing provisioned package if present (prevents version conflict)
+    $existing = Get-AppxProvisionedPackage -Online |
+        Where-Object { $_.DisplayName -eq "Microsoft.CompanyPortal" }
+    if ($existing) {
+        Write-Host "Removing existing provisioned package: $($existing.PackageName)"
+        Remove-AppxProvisionedPackage -Online -PackageName $existing.PackageName | Out-Null
+    }
 
-Write-Host "Provisioning Company Portal with dependencies..."
-Add-AppxProvisionedPackage -Online -PackagePath $bundlePath -LicensePath $licensePath -DependencyPackagePath $depPaths | Out-Null
+    Write-Host "Provisioning Company Portal with dependencies..."
+    Add-AppxProvisionedPackage -Online -PackagePath $bundlePath -LicensePath $licensePath -DependencyPackagePath $depPaths | Out-Null
 
-# Register for any existing user profiles (covers scenarios where a user is already logged in)
-$pkg = Get-AppxPackage -AllUsers -Name "Microsoft.CompanyPortal" -ErrorAction SilentlyContinue
-if ($pkg) {
-    foreach ($p in @($pkg)) {
-        $manifest = Join-Path $p.InstallLocation "AppxManifest.xml"
-        if (Test-Path $manifest) {
-            Write-Host "Registering for existing users from: $($p.InstallLocation)"
-            Add-AppxPackage -Register $manifest -DisableDevelopmentMode -ForceApplicationShutdown -ErrorAction SilentlyContinue
+    # Register for any existing user profiles (covers scenarios where a user is already logged in)
+    $pkg = Get-AppxPackage -AllUsers -Name "Microsoft.CompanyPortal" -ErrorAction SilentlyContinue
+    if ($pkg) {
+        foreach ($p in @($pkg)) {
+            $manifest = Join-Path $p.InstallLocation "AppxManifest.xml"
+            if (Test-Path $manifest) {
+                Write-Host "Registering for existing users from: $($p.InstallLocation)"
+                Add-AppxPackage -Register $manifest -DisableDevelopmentMode -ForceApplicationShutdown -ErrorAction SilentlyContinue
+            }
         }
     }
+} catch {
+    Write-Warning "Provisioning failed: $_"
 }
 
-# Create a one-time logon task to register Company Portal at first user sign-in
-# This ensures the app is immediately available when ESP skips account setup
-$taskName = "RegisterCompanyPortal"
+# Copy registration script and create scheduled task via schtasks.exe + XML
+$destination = "C:\ProgramData\Scripts"
+if (!(Test-Path $destination)) {
+    mkdir $destination
+}
+
 $taskScript = @'
 $pkg = Get-AppxPackage -Name "Microsoft.CompanyPortal" -ErrorAction SilentlyContinue
 if (-not $pkg) {
-    $allPkg = Get-AppxPackage -AllUsers -Name "Microsoft.CompanyPortal" -ErrorAction SilentlyContinue
-    if ($allPkg) {
-        $manifest = Join-Path $allPkg[0].InstallLocation "AppxManifest.xml"
+    $path = Get-ChildItem "C:\Program Files\WindowsApps\Microsoft.CompanyPortal_*" -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($path) {
+        $manifest = Join-Path $path.FullName "AppxManifest.xml"
         if (Test-Path $manifest) {
             Add-AppxPackage -Register $manifest -DisableDevelopmentMode -ForceApplicationShutdown
         }
     }
 }
-Unregister-ScheduledTask -TaskName "RegisterCompanyPortal" -Confirm:$false
 '@
 
-$scriptPath = "C:\ProgramData\RegisterCompanyPortal.ps1"
-Set-Content -Path $scriptPath -Value $taskScript -Force
+Set-Content -Path "$destination\RegisterCompanyPortal.ps1" -Value $taskScript -Force
 
-$action  = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$scriptPath`""
-$trigger = New-ScheduledTaskTrigger -AtLogOn
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+$taskXml = @'
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <URI>\RegisterCompanyPortal</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <ExecutionTimeLimit>P1D</ExecutionTimeLimit>
+      <Enabled>true</Enabled>
+    </LogonTrigger>
+    <RegistrationTrigger>
+      <Delay>PT30S</Delay>
+      <Enabled>true</Enabled>
+    </RegistrationTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <GroupId>S-1-5-32-545</GroupId>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>false</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>true</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>true</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT72H</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Command>
+      <Arguments>-executionpolicy bypass -windowstyle hidden -file "C:\ProgramData\Scripts\RegisterCompanyPortal.ps1"</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+'@
 
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
-    -Principal (New-ScheduledTaskPrincipal -GroupId "BUILTIN\Users" -RunLevel Limited) `
-    -Force | Out-Null
+$xmlPath = "$env:TEMP\RegisterCompanyPortal.xml"
+Set-Content -Path $xmlPath -Value $taskXml -Encoding Unicode -Force
 
-Write-Host "Logon registration task created: $taskName"
+schtasks.exe /create /xml $xmlPath /tn "RegisterCompanyPortal" /f | Out-Host
+Write-Host "schtasks /create exit code: $LASTEXITCODE"
+
+schtasks.exe /run /tn "RegisterCompanyPortal" | Out-Host
+Write-Host "schtasks /run exit code: $LASTEXITCODE"
 
 # Verify installation
 $provisioned = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq "Microsoft.CompanyPortal" }
 $installed = Get-AppxPackage -AllUsers -Name "Microsoft.CompanyPortal"
 
-Write-Host "Provisioned: $($provisioned -ne $null)"
-Write-Host "Installed for users: $($installed -ne $null)"
+Write-Host "Provisioned: $($null -ne $provisioned)"
+Write-Host "Installed for users: $($null -ne $installed)"
 
-Stop-Transcript
-
-Write-Host "Installation complete."
-exit 0
+if ($provisioned -or $installed) {
+    Write-Host "Installation complete."
+    exit 0
+} else {
+    Write-Host "Installation failed - Company Portal not detected."
+    exit 1
+}
