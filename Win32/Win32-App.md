@@ -1,6 +1,6 @@
-# Win32 — Source Files
+# Win32 App — Package and Deploy
 
-This folder contains the scripts and packages used to build the Intune Win32 app.
+This folder contains the scripts and packages used to build and deploy the Intune Win32 app.
 
 ## Contents
 
@@ -12,17 +12,36 @@ This folder contains the scripts and packages used to build the Intune Win32 app
 | `*_License1.xml` | Offline license file |
 | `*.appx` | Framework dependency packages (x64) |
 
-## Packaging
+## Step 1: Package the Win32 App
 
-To wrap these files into an `.intunewin` package, use the [Microsoft Win32 Content Prep Tool](https://github.com/Microsoft/Microsoft-Win32-Content-Prep-Tool):
+### 1. Download the Content Prep Tool
+- Download the [Microsoft Win32 Content Prep Tool](https://github.com/Microsoft/Microsoft-Win32-Content-Prep-Tool) from GitHub
+- Extract `IntuneWinAppUtil.exe` to a local folder
 
-```
-IntuneWinAppUtil.exe -c Win32 -s Install.ps1 -o IntuneWin
-```
+### 2. Verify your source folder
+- Make sure this `Win32/` folder contains all required files:
+  - `Install.ps1`
+  - `Uninstall.ps1`
+  - `*.appxbundle` (Company Portal bundle)
+  - `*_License1.xml` (offline license)
+  - All five `.appx` dependency packages
 
-The output will be saved to the `IntuneWin/` folder.
+### 3. Run the tool
+- Open a command prompt or PowerShell window
+- Navigate to where you extracted `IntuneWinAppUtil.exe`
+- Run:
+  ```
+  IntuneWinAppUtil.exe -c Win32 -s Install.ps1 -o IntuneWin
+  ```
+  - `-c Win32` — the source folder containing your scripts and packages
+  - `-s Install.ps1` — the setup file (entry point for the install)
+  - `-o IntuneWin` — the output folder where the `.intunewin` will be saved
 
-## Step-by-Step: Configure the Win32 App in Intune
+### 4. Confirm the output
+- Check the `IntuneWin/` folder for `Install.intunewin`
+- This is the file you upload to Intune in the next step
+
+## Step 2: Configure the Win32 App in Intune
 
 ### 1. Create the app
 - Go to **Intune > Apps > All apps > Add**
