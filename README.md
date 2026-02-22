@@ -26,12 +26,21 @@ Win32/
   *.appx                       # Dependency packages (x64)
   *.appxbundle                 # Company Portal offline bundle
   *_License1.xml               # Offline license file
+  Win32-App.md                 # Step-by-step packaging and Intune configuration guide
 Detection Script/
   Detect.ps1                   # Custom detection script for Intune
 IntuneWin/
   Install.intunewin            # Pre-packaged .intunewin for upload
 PlatformScript/
   CreateScheduledTask.ps1      # Platform Script — creates scheduled task + registration scripts
+  Platform-Script-Scheduled-Task.md  # Step-by-step Platform Script deployment guide
+Company-Portal-Dependancies/
+  *.appx                       # Full set of dependencies (arm, arm64, x64, x86)
+  *.appxbundle                 # Company Portal offline bundle
+  *_License1.xml               # Offline license file
+  Company-Portal-Dependencies.md  # Download and extraction guide
+Logo/
+  CompanyPortal-Logo.png       # App icon for Intune
 ```
 
 ## Intune Deployment
