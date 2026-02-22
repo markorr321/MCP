@@ -23,12 +23,13 @@ The solution uses a two-part approach deployed through separate Intune policies:
 Win32/
   Install.ps1                  # Main install script (Win32 app)
   Uninstall.ps1                # Uninstall script (removes app, task, and staged files)
-  Install.intunewin            # Pre-packaged .intunewin for upload
   *.appx                       # Dependency packages (x64)
   *.appxbundle                 # Company Portal offline bundle
   *_License1.xml               # Offline license file
 Detection Script/
   Detect.ps1                   # Custom detection script for Intune
+IntuneWin/
+  Install.intunewin            # Pre-packaged .intunewin for upload
 PlatformScript/
   CreateScheduledTask.ps1      # Platform Script — creates scheduled task + registration scripts
 ```
@@ -37,11 +38,11 @@ PlatformScript/
 
 ### 1. Win32 App
 
-Upload `Install.intunewin` from the `Win32/` folder to Intune as a Win32 app.
+Upload `Install.intunewin` from the `IntuneWin/` folder to Intune as a Win32 app.
 
 To re-package after making changes, use the [Microsoft Win32 Content Prep Tool](https://github.com/Microsoft/Microsoft-Win32-Content-Prep-Tool):
 ```
-IntuneWinAppUtil.exe -c Win32 -s Install.ps1 -o Win32
+IntuneWinAppUtil.exe -c Win32 -s Install.ps1 -o IntuneWin
 ```
 
 #### App Configuration
