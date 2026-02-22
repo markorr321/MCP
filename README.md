@@ -8,64 +8,59 @@ Deploying Company Portal through the Microsoft Store (New) app type in Intune ha
 
 Existing workarounds like deploying Company Portal as an offline LOB app solve the availability problem, but the app version is static and can't be updated unless Microsoft publishes new offline source files.
 
-This solution instead uses the new [Intune Win32 PowerShell installer type](https://powershellisfun.com/2026/01/23/intune-win32-powershell-installer-type/), which allows the install and uninstall scripts to be updated directly in Intune without recreating the `.intunewin` package. Script logic can be iterated on independently from the bundled app payload.
+This solution deploys Company Portal as a Win32 app with PowerShell scripts called via the standard command line installer type.
 
 ## How It Works
 
-The solution uses a two-phase approach:
+The solution uses a two-part approach deployed through separate Intune policies:
 
-1. **System-level provisioning** - `Install.ps1` provisions the Company Portal `.appxbundle` with its dependencies and license so it is available to all users on the device.
-2. **Per-user registration** - A scheduled task (`RegisterCompanyPortal`) checks whether Company Portal is registered for the current user and registers it from the provisioned package if not. The task fires on two triggers:
-   - **Registration trigger** (30-second delay) — registers the app for the current user immediately after install, so it's available during the active session without waiting for a logoff/logon cycle.
-   - **Logon trigger** — catches any future users who log in after provisioning.
+1. **Win32 App — System-level provisioning** — `Install.ps1` provisions the Company Portal `.appxbundle` with its dependencies and license so it is available to all users on the device. It also stages the bundle and dependency files to `C:\ProgramData\CompanyPortal` for user-context registration.
+2. **Platform Script — Per-user registration** — `CreateScheduledTask.ps1` is deployed as an Intune Platform Script. It writes a registration script and VBS launcher to `C:\ProgramData\Scripts` and creates a `RegisterCompanyPortal` scheduled task that triggers at user logon. The task installs Company Portal from the staged bundle for any user who doesn't already have it.
 
 ## Repository Structure
 
 ```
-PowerShell/
-  Install.ps1                  # Main install script (deploy via Intune)
-  Uninstall.ps1                # Uninstall script (removes app + scheduled task)
-  RegisterCompanyPortal.ps1    # Standalone per-user registration script
-  CreateScheduledTask.ps1      # Standalone scheduled task creation script
-  Register-MCP/                # Standalone module (task XML + scripts)
-    installtask.ps1            # Copies registration script and creates the scheduled task
-    RegisterCompanyPortal.ps1  # Per-user registration logic
-    RegisterCompanyPortal.xml  # Exported scheduled task XML definition
+Win32/
+  Install.ps1                  # Main install script (Win32 app)
+  Uninstall.ps1                # Uninstall script (removes app, task, and staged files)
+  Install.intunewin            # Pre-packaged .intunewin for upload
   *.appx                       # Dependency packages (x64)
   *.appxbundle                 # Company Portal offline bundle
   *_License1.xml               # Offline license file
-RegisterCompanyPortal.xml      # Exported scheduled task XML (root copy)
+Detection Script/
+  Detect.ps1                   # Custom detection script for Intune
+PlatformScript/
+  CreateScheduledTask.ps1      # Platform Script — creates scheduled task + registration scripts
 ```
 
 ## Intune Deployment
 
-### Package as a Win32 App
+### 1. Win32 App
 
-1. Place all files from `PowerShell/` into a single source folder (scripts, `.appxbundle`, `.appx` dependencies, and license XML).
-2. Use the [Microsoft Win32 Content Prep Tool](https://github.com/Microsoft/Microsoft-Win32-Content-Prep-Tool) to wrap the folder into an `.intunewin` file:
-   ```
-   IntuneWinAppUtil.exe -c <source_folder> -s Install.ps1 -o <output_folder>
-   ```
-3. Upload the `.intunewin` to Intune as a Win32 app.
+Upload `Install.intunewin` from the `Win32/` folder to Intune as a Win32 app.
 
-### Intune App Configuration
+To re-package after making changes, use the [Microsoft Win32 Content Prep Tool](https://github.com/Microsoft/Microsoft-Win32-Content-Prep-Tool):
+```
+IntuneWinAppUtil.exe -c Win32 -s Install.ps1 -o Win32
+```
 
-When configuring the app in Intune, select **PowerShell Script** as the installer type (type any character in the installer type field to reveal the option). This lets you update the install/uninstall scripts directly in Intune without repackaging.
+#### App Configuration
 
 | Setting | Value |
 |---|---|
-| **Installer type** | PowerShell Script |
-| **Install script** | `Install.ps1` |
-| **Uninstall script** | `Uninstall.ps1` |
+| **Install command** | `powershell.exe -ExecutionPolicy Bypass -File .\Install.ps1` |
+| **Uninstall command** | `powershell.exe -ExecutionPolicy Bypass -File .\Uninstall.ps1` |
 | **Install behavior** | System |
-| **Detection rule** | Registry or file-based rule checking for `Microsoft.CompanyPortal` provisioned package |
+| **Detection rule** | Custom detection script — upload `Detection Script\Detect.ps1` |
 
-### Detection Rule Example
+### 2. Platform Script
 
-Use a **custom script** or a **file rule**:
-- **Path:** `C:\ProgramData\Scripts`
-- **File:** `RegisterCompanyPortal.ps1`
-- **Detection method:** File or folder exists
+Deploy `PlatformScript\CreateScheduledTask.ps1` as an Intune **Platform Script** (Devices > Scripts and remediations > Platform scripts).
+
+| Setting | Value |
+|---|---|
+| **Run this script using the logged on credentials** | No (run as system) |
+| **Run script in 64 bit PowerShell Host** | Yes |
 
 ## Dependencies
 
@@ -85,12 +80,12 @@ The install script automatically selects the correct architecture (x64/x86) at r
 
 ## Scheduled Task Details
 
-The `RegisterCompanyPortal` scheduled task is created with the following behavior:
+The `RegisterCompanyPortal` scheduled task is created by the Platform Script with the following behavior:
 
-- **Triggers:** Runs at user logon and once on task registration (30-second delay)
-- **Principal:** BUILTIN\Users group, least privilege
-- **Action:** Runs `C:\ProgramData\Scripts\RegisterCompanyPortal.ps1` via PowerShell (hidden window, execution policy bypass)
-- **Behavior:** Checks if Company Portal is registered for the current user; if not, finds the provisioned package in `WindowsApps` and registers it
+- **Trigger:** Runs at user logon
+- **Principal:** BUILTIN\Users group (SID `S-1-5-32-545`), least privilege
+- **Action:** Runs `C:\ProgramData\Scripts\RegisterCompanyPortal.vbs` — a VBS launcher that invokes PowerShell silently (no console window popup)
+- **Behavior:** Checks if Company Portal is installed for the current user; if not, installs it from the staged bundle and dependencies in `C:\ProgramData\CompanyPortal`
 
 ## Uninstall
 
@@ -99,4 +94,5 @@ The `RegisterCompanyPortal` scheduled task is created with the following behavio
 1. Removes the provisioned package (prevents install for new users)
 2. Removes the installed package for all existing user profiles
 3. Deletes the `RegisterCompanyPortal` scheduled task
-4. Removes the registration script from `C:\ProgramData\Scripts`
+4. Removes the registration scripts from `C:\ProgramData\Scripts`
+5. Removes the staged bundle and dependencies from `C:\ProgramData\CompanyPortal`
