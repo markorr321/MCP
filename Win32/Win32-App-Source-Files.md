@@ -59,6 +59,13 @@ The output will be saved to the `IntuneWin/` folder.
 - Click **Browse** and upload `Detect.ps1` from the `Detection Script/` folder
 - **Run script as 32-bit process on 64-bit clients:** No
 - **Enforce script signature check:** No
+
+The detection script checks two conditions:
+1. **Provisioned** — Is `Microsoft.CompanyPortal` in the provisioned package list? (covers new user profiles)
+2. **Installed** — Is `Microsoft.CompanyPortal` installed for any user? (covers existing profiles and auto-updates)
+
+If either condition is true, the script exits with code `0` (detected). Otherwise, it exits with code `1` (not detected).
+
 - Click **Next**
 
 ### 7. Dependencies
