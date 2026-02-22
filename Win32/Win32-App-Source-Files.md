@@ -22,11 +22,56 @@ IntuneWinAppUtil.exe -c Win32 -s Install.ps1 -o IntuneWin
 
 The output will be saved to the `IntuneWin/` folder.
 
-## Intune Configuration
+## Step-by-Step: Configure the Win32 App in Intune
 
-| Setting | Value |
-|---|---|
-| **Install command** | `powershell.exe -ExecutionPolicy Bypass -File .\Install.ps1` |
-| **Uninstall command** | `powershell.exe -ExecutionPolicy Bypass -File .\Uninstall.ps1` |
-| **Install behavior** | System |
-| **Detection rule** | Custom detection script — upload `Detect.ps1` from the `Detection Script/` folder |
+### 1. Create the app
+- Go to **Intune > Apps > All apps > Add**
+- Select **Windows app (Win32)** as the app type
+- Click **Select**
+
+### 2. Upload the package
+- Click **Select app package file**
+- Browse to and upload `Install.intunewin` from the `IntuneWin/` folder
+- Click **OK**
+
+### 3. App information
+- **Name:** Microsoft Company Portal (Offline)
+- **Description:** Offline deployment of Company Portal with per-user registration via scheduled task
+- **Publisher:** Microsoft
+- **Logo:** Upload `CompanyPortal-Logo.png` from the `Logo/` folder
+- Fill in any other fields per your org's standards
+- Click **Next**
+
+### 4. Program
+- **Install command:** `powershell.exe -ExecutionPolicy Bypass -File .\Install.ps1`
+- **Uninstall command:** `powershell.exe -ExecutionPolicy Bypass -File .\Uninstall.ps1`
+- **Install behavior:** System
+- **Device restart behavior:** No specific action
+- Click **Next**
+
+### 5. Requirements
+- **Operating system architecture:** 64-bit
+- **Minimum operating system:** Windows 10 1903 (or your org's minimum)
+- Click **Next**
+
+### 6. Detection rules
+- **Rules format:** Use a custom detection script
+- Click **Browse** and upload `Detect.ps1` from the `Detection Script/` folder
+- **Run script as 32-bit process on 64-bit clients:** No
+- **Enforce script signature check:** No
+- Click **Next**
+
+### 7. Dependencies
+- Skip unless you have other apps that must install first
+- Click **Next**
+
+### 8. Supersedence
+- Skip unless you're replacing an existing Company Portal deployment
+- Click **Next**
+
+### 9. Assignments
+- Assign to your target device group as **Required**
+- Click **Next**
+
+### 10. Review + create
+- Review settings and click **Create**

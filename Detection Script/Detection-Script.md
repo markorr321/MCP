@@ -17,11 +17,12 @@ The script checks two conditions:
 
 If either condition is true, the script exits with code `0` (detected). Otherwise, it exits with code `1` (not detected).
 
-## Intune Configuration
+## Step-by-Step: Configure the Detection Rule in Intune
 
-When configuring the Win32 app detection rule:
+This script is uploaded during the Win32 app configuration (step 6 of the app setup).
 
-- **Rules format:** Use a custom detection script
-- **Script file:** Upload `Detect.ps1`
-- **Run script as 32-bit process on 64-bit clients:** No
-- **Enforce script signature check:** No
+1. On the **Detection rules** tab, set **Rules format** to **Use a custom detection script**
+2. Click **Browse** and select `Detect.ps1` from this folder
+3. Set **Run script as 32-bit process on 64-bit clients** to **No**
+4. Set **Enforce script signature check** to **No**
+5. Click **Next**
